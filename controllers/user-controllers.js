@@ -1,11 +1,12 @@
-const User = require('../models/user-model');
 require('dotenv').config(); 
+const User = require('../models/user-model');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { sendResponse, errorResponse } = require('../utils/response');
 const responseMessage = require("../utils/responseMessage");
 const nodemailer = require('nodemailer');
-const sendMailToUser = require('../utils/send-mail');
+const { emailService } = require('../utils/services/emailService');
+const crypto = require('crypto');
 
 const postRegister = async (req, res) => {
   const {userName, email, password, userType = 1, gender = "", mobile = ""} = req.body;
@@ -207,36 +208,76 @@ const updatePutUserById = async (req, res) => {
   
 };
 
-const postForgotPassword = async (req, res) => {
-  const { email } = req.body;
-  
-  if (!email) {
-    return errorResponse(res, 400, 'Email is required to reset password.');
-  }
+// Store reset tokens (in practice, use a database)
+const resetTokens = new Map();
 
+
+const postForgotPassword = async (req, res) => {
   try {
-    const existingUser = await User.findOne({ email });
-    if (!existingUser) {
-      return errorResponse(res, 404, 'No user found with this email.');
+    const { email } = req.body;
+
+    // Validate email
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({
+        error: 'Invalid email format',
+        details: 'Please provide a valid email address'
+      });
     }
 
-    const resetToken = jwt.sign({ id: existingUser._id }, process.env.JWT_SECRET, { expiresIn: '1d' });
-    
-    const mailOptions = {
-      from: `<${process.env.GOOGLE_MAIL_ID}>`,
-      to: existingUser.email,
-      subject: "Password Reset Request",
-      html: `
-        <p>You are receiving this email because you (or someone else) requested a password reset for your account.</p>
-        <p>Please click on the following link to reset your password:</p>
-        <a href="${process.env.CLIENT_URL}/reset-password/${resetToken}"><button>Reset Password</button></a>
-        <p>If you did not request this, please ignore this email.</p>`
-    };
+    // Generate and store token (with error handling)
+    let resetToken;
+    try {
+      resetToken = crypto.randomBytes(32).toString('hex');
+    } catch (error) {
+      console.error('Token generation failed:', error);
+      return res.status(500).json({
+        error: 'Failed to generate reset token',
+        details: 'Internal server error during token generation'
+      });
+    }
 
-    await sendMailToUser(res, mailOptions);
+    const resetLink = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+
+    try {
+      await emailService.sendResetEmail(email, resetLink);
+      
+      // Only store token if email was sent successfully
+      resetTokens.set(resetToken, {
+        email,
+        expiry: Date.now() + 3600000
+      });
+
+      res.json({
+        message: 'Reset link sent successfully',
+        email: email // Return email for confirmation
+      });
+    } catch (error) {
+      let statusCode = 500;
+      let errorMessage = 'Failed to send reset email';
+      let errorDetails = error.message;
+
+      // Handle specific email errors
+      if (error.code === 'EAUTH') {
+        statusCode = 503;
+        errorMessage = 'Email authentication failed';
+        errorDetails = 'Invalid email credentials';
+      } else if (error.code === 'ESOCKET') {
+        statusCode = 503;
+        errorMessage = 'Email service connection failed';
+        errorDetails = 'Unable to connect to email service';
+      }
+
+      res.status(statusCode).json({
+        error: errorMessage,
+        details: errorDetails
+      });
+    }
   } catch (error) {
-    console.error('Error in postForgotPassword:', error);
-    return errorResponse(res, 500, 'Error processing the request.', error.message);
+    console.error('Password reset request failed:', error);
+    res.status(500).json({
+      error: 'Internal server error',
+      details: 'An unexpected error occurred while processing your request'
+    });
   }
 };
 
