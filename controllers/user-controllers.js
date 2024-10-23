@@ -1,28 +1,70 @@
-const { Person } = require('../models/person-model');
 const User = require('../models/user-model');
+require('dotenv').config(); 
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 const { sendResponse, errorResponse } = require('../utils/response');
 const responseMessage = require("../utils/responseMessage");
+const nodemailer = require('nodemailer');
+const sendMailToUser = require('../utils/send-mail');
+
+const postRegister = async (req, res) => {
+  const {userName, email, password, userType = 1, gender = "", mobile = ""} = req.body;
+
+    // Check if the required fields are filled
+    if (!userName || !email || !password || !gender || !mobile) {
+      return errorResponse(res, 400, responseMessage.users.failed_register,responseMessage.users.failed_register);
+    }
+  try{
+    const existingUser = await User.findOne({
+      $or: [{userName: userName},{email: email}]
+    });
+    console.log(existingUser);
+
+    if (existingUser) {
+      return sendResponse(res, 400, responseMessage.users.failed_user_exists, responseMessage.users.failed_user_exists);
+    }
+    const salt = await bcrypt.genSalt(10);
+    const hashPassword = await bcrypt.hash(password, salt);
+    const newUser = new User({userName: userName, email, password: hashPassword, userType, gender, mobile});
+    await newUser.save();
+    return sendResponse(res, 201, responseMessage.users.success_register, newUser);
+  }catch(error){
+    // Check if the error is due to a unique constraint (duplicate email)
+    if (error.code === 11000) {
+      const duplicateKey = Object.keys(error.keyValue)[0]; // 'userName' or 'email'
+      return errorResponse(res, 400, 'Duplicate email error', `${duplicateKey} Email is already registered.`);
+    }
+    
+    // Generic error handling
+    return errorResponse(res, 500, 'Error registering user', error.message);  
+  }
+};
+
+const login = async (req, res) => {
+  const {email, password} = req.body;
+  console.log(email, password);
+  try{
+    const user = await User.findOne({email});
+    console.log(user,'login');
+    if (!user) {
+      return errorResponse(res, 400, responseMessage.users.login_failed,responseMessage.users.login_failed);      
+    }
+    const isMatch = await bcrypt.compare(password, user.password);
+    console.log(isMatch);
+    if (!isMatch) {
+      return errorResponse(res, 400, responseMessage.users.login_failed,responseMessage.users.login_failed);      
+    }
+    const token = jwt.sign({id: user._id}, process.env.JWT_SECRET, {expiresIn: '1h'});
+    return sendResponse(res, 200, responseMessage.users.success_login, { token: token, userDetails: user});
+  }catch(error){
+    return errorResponse(res, 500, responseMessage.users.error_login, responseMessage.users.error_login);
+  }
+};
 
 const getAllUsers = async (req, res) => {
   try{
-    const users = await User.find({});
-    User.aggregate([
-      {
-          $group:
-          {
-              _id: { age: "$age", district: "$district"},
-              totalUser: { $sum: 1 },
-              averageAge: { $avg: "$age" }
-          }
-      }
-  ])
-      .then(result => {
-          console.log(result)
-      })
-      .catch(error => {
-          console.log(error)
-      })
-    sendResponse(res, 200, responseMessage.users.get_success, users);    
+    const users = await User.find({});       
+    return sendResponse(res, 200, responseMessage.users.get_success, users);    
   }catch(error){    
     errorResponse(res, 500, 'failed server', 'failer server')
   }
@@ -165,5 +207,48 @@ const updatePutUserById = async (req, res) => {
   
 };
 
+const postForgotPassword = async (req, res) => {
+  const { email } = req.body;
+  
+  if (!email) {
+    return errorResponse(res, 400, 'Email is required to reset password.');
+  }
 
-module.exports = { getAllUsers, createUser, deleteUserById, updateUserById, getUserById, deleteAllUsers, updatePatchUserById, updatePutUserById};
+  try {
+    const existingUser = await User.findOne({ email });
+    if (!existingUser) {
+      return errorResponse(res, 404, 'No user found with this email.');
+    }
+
+    const resetToken = jwt.sign({ id: existingUser._id }, process.env.JWT_SECRET, { expiresIn: '1d' });
+    
+    const mailOptions = {
+      from: `<${process.env.GOOGLE_MAIL_ID}>`,
+      to: existingUser.email,
+      subject: "Password Reset Request",
+      html: `
+        <p>You are receiving this email because you (or someone else) requested a password reset for your account.</p>
+        <p>Please click on the following link to reset your password:</p>
+        <a href="${process.env.CLIENT_URL}/reset-password/${resetToken}"><button>Reset Password</button></a>
+        <p>If you did not request this, please ignore this email.</p>`
+    };
+
+    await sendMailToUser(res, mailOptions);
+  } catch (error) {
+    console.error('Error in postForgotPassword:', error);
+    return errorResponse(res, 500, 'Error processing the request.', error.message);
+  }
+};
+
+const postResetPassword = async (req, res) => {
+  try{
+
+  }catch(error){
+
+  }
+};
+
+
+
+
+module.exports = { getAllUsers, createUser, deleteUserById, updateUserById, getUserById, deleteAllUsers, updatePatchUserById, updatePutUserById, postRegister, login, postForgotPassword, postResetPassword};

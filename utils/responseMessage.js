@@ -16,6 +16,19 @@ module.exports = {
         success_patch_updated: "User Updated successfully",
         failed_patch_not_found: "users not found",
         success_put_updated: "User updated successfully",
-        failed_put_not_found: "user not updated"
+        failed_put_not_found: "user not updated",
+        failed_user_exists: "User already exists",
+        success_register: "User register successfully",
+        error_register: "Register error",
+        login_failed: "Invalid credentails",
+        success_login: "Login successfully",
+        error_login: "login error",
+        failed_register: "All fields are required (username, email, password, gender, mobile)",
+        failed_forget_password_fields: "Email is required",
+        error_forget_password: "forget password error",
+        failed_forget_password_not_found: "invalid email",
+        reset_password_link_sent_to_email: "Reset Password link sent to your registered Email",
+        error_message: "Oops! Something went wrong here...",
+        
     }
 }

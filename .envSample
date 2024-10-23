@@ -1,0 +1,8 @@
+NODE_ENV=xxxxxxxxxx
+MONGOURI=xxxxxxxxxx
+JWT_SECRET=xxxxxxxxxx
+GOOGLE_MAIL_ID=xxxxxxxxxx
+GOOGLE_MAIL_PASSWORD=xxxxxxxxxx
+CLIENT_URL=xxxxxxxxxx
+TOKEN=xxxxxxxxxx
+SENDER_EMAIL=xxxxxxxxxx
